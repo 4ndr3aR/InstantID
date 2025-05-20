@@ -175,7 +175,7 @@ class StableDiffusionXLInstantIDPipeline(StableDiffusionXLControlNetPipeline):
         image_proj_model.eval()
         
         self.image_proj_model = image_proj_model.to(self.device, dtype=self.dtype)
-        state_dict = torch.load(model_ckpt, map_location="cpu")
+        state_dict = torch.load(model_ckpt, map_location="cpu", weights_only=True)
         if 'image_proj' in state_dict:
             state_dict = state_dict["image_proj"]
         self.image_proj_model.load_state_dict(state_dict)
@@ -205,7 +205,7 @@ class StableDiffusionXLInstantIDPipeline(StableDiffusionXLControlNetPipeline):
                                                    num_tokens=num_tokens).to(unet.device, dtype=unet.dtype)
         unet.set_attn_processor(attn_procs)
         
-        state_dict = torch.load(model_ckpt, map_location="cpu")
+        state_dict = torch.load(model_ckpt, map_location="cpu", weights_only=True)
         ip_layers = torch.nn.ModuleList(self.unet.attn_processors.values())
         if 'ip_adapter' in state_dict:
             state_dict = state_dict['ip_adapter']

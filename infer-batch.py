@@ -10,6 +10,10 @@ from diffusers.models import ControlNetModel
 from insightface.app import FaceAnalysis
 from pipeline_stable_diffusion_xl_instantid import StableDiffusionXLInstantIDPipeline, draw_kps
 
+from pathlib import Path
+
+import argparse
+
 def resize_img(input_image, max_side=1280, min_side=1024, size=None, 
                pad_to_max_side=False, mode=Image.BILINEAR, base_pixel_number=64):
 
@@ -33,12 +37,23 @@ def resize_img(input_image, max_side=1280, min_side=1024, size=None,
         input_image = Image.fromarray(res)
     return input_image
 
-def load_face(fn):
-	print(f"Loading face: {fn}")
-	face_image = load_image(fn)
+def load_face(fn, debug=False):
+	img = Image.open(fn)
+	print(f'Loading face: {fn} - image size: {img.size}')
+
+	face_image = load_image(img)
 	face_image = resize_img(face_image)
 
 	face_info = app.get(cv2.cvtColor(np.array(face_image), cv2.COLOR_RGB2BGR))
+	n_faces = len(face_info)
+	print(f'Found {n_faces} faces')
+	if debug:
+		print(f'face_info: {face_info}')
+		print(f'face_info[0][bbox]: {face_info[0]["bbox"]}')
+	if n_faces == 0:
+		return None, None
+	if n_faces > 1:
+		return None, None
 	face_info = sorted(face_info, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1] # only use the maximum face
 	face_emb = face_info['embedding']
 	face_kps = draw_kps(face_image, face_info['kps'])
@@ -63,10 +78,22 @@ def infer_face(pipe, face_emb, face_kps, prompt, n_prompt, out_fn,
 		guidance_scale=guidance_scale,
 	).images[0]
 
+	print(f"Saving image: {Path(out_fn).name}")
 	image.save(out_fn)
 
 
 if __name__ == "__main__":
+
+	argparser = argparse.ArgumentParser()
+	argparser.add_argument('--input_dir',	type=str, default='.')
+	argparser.add_argument('--output_dir',	type=str, default='/tmp')
+	argparser.add_argument('--ext',		type=str, default='jpg')
+	args = argparser.parse_args()
+
+	search_path = Path(args.input_dir)
+	flist = list(search_path.glob('*.' + args.ext))
+	print(f'\nFound {len(flist)} images in {search_path}...\n')
+
 
 	# Load face encoder
 	app = FaceAnalysis(name='antelopev2', root='./', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
@@ -91,12 +118,38 @@ if __name__ == "__main__":
 
 	# Infer setting
 	#prompt = "analog film photo of a man. faded film, desaturated, 35mm photo, grainy, vignette, vintage, Kodachrome, Lomography, stained, highly detailed, found footage, masterpiece, best quality"
-	prompt = "marble statue of man"
-	n_prompt = "(lowres, low quality, worst quality:1.2), (text:1.2), watermark, painting, drawing, illustration, glitch, deformed, mutated, cross-eyed, ugly, disfigured (lowres, low quality, worst quality:1.2), (text:1.2), watermark, painting, drawing, illustration, glitch,deformed, mutated, cross-eyed, ugly, disfigured"
+	#prompt = "marble statue of man"
+	prompt = "marble statue"
+	#n_prompt = "(lowres, low quality, worst quality:1.2), (text:1.2), watermark, painting, drawing, illustration, glitch, deformed, mutated, cross-eyed, ugly, disfigured (lowres, low quality, worst quality:1.2), (text:1.2), watermark, painting, drawing, illustration, glitch,deformed, mutated, cross-eyed, ugly, disfigured"
+	n_prompt = "(lowres, low quality, worst quality:1.2), (text:1.2), watermark, painting, drawing, illustration, glitch, deformed, mutated, cross-eyed, ugly, disfigured, helmet, eyeglasses, beard, hat, brown hair, blonde hair, black hair, pink face, brown face, black face, white skin, brown skin, black skin"
 
+	controlnet_conditioning_scale=0.8
+	ip_adapter_scale=0.8
+	num_inference_steps=60
+	guidance_scale=6
 
-	face_emb, face_kps = load_face("./examples/yann-lecun_resize.jpg")
+	out_path = Path(args.output_dir)
+	out_path.mkdir(parents=True, exist_ok=True)
 
+	for fn in search_path.glob('*.' + args.ext):
+		print(f'Reading image {str(fn.name)}...')
+
+		out_fn = out_path / (fn.stem + '-result.jpg')
+
+		#fn = "./examples/yann-lecun_resize.jpg"
+		face_emb, face_kps = load_face(fn)
+		if face_emb is None or face_kps is None:
+			print(f'Failed to load face: {fn} - no faces or several faces found...')
+			continue
+
+		infer_face(pipe, face_emb, face_kps, prompt, n_prompt, out_fn,
+				controlnet_conditioning_scale=controlnet_conditioning_scale,
+				ip_adapter_scale=ip_adapter_scale,
+				num_inference_steps=num_inference_steps,
+				guidance_scale=guidance_scale
+			)
+
+	'''
 	for i in range(5):
 		for j in range(5):
 			for k in range(5):
@@ -112,7 +165,8 @@ if __name__ == "__main__":
 							ip_adapter_scale=ip_adapter_scale,
 							num_inference_steps=num_inference_steps,
 							guidance_scale=guidance_scale
-					)	
+					)
+	'''
 
 	'''
 	face_image = load_image("./examples/yann-lecun_resize.jpg")
