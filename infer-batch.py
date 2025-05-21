@@ -65,7 +65,7 @@ def draw_bboxes(img, bboxes, colors=['red', 'blue', 'green', 'yellow', 'purple',
 
 def load_face(fn, debug=False):
 	img = Image.open(fn)
-	print(f'Loading face: {fn} - image size: {img.size}')
+	print(f'Loading face: {Path(fn).name} - image size: {img.size}')
 
 	face_image = load_image(img)
 	face_image = resize_img(face_image)
@@ -74,7 +74,7 @@ def load_face(fn, debug=False):
 
 	face_info = app.get(cv2.cvtColor(np.array(face_image), cv2.COLOR_RGB2BGR))
 	n_faces = len(face_info)
-	print(f'Found {n_faces} faces')
+	print(f'Found {n_faces} faces in {Path(fn).name}')
 	# 'bbox': array([187.35774, 159.91435, 537.2371 , 638.2024 ]
 	# 'bbox': array([1035.5541, 59.45189, 1327.8179 , 470.8462 ]
 	# 'det_score': np.float32(0.8763549)
@@ -274,14 +274,22 @@ def load_face(fn, debug=False):
 	#face_info[1][bbox]     : [1035.5541    59.45189 1327.8179   470.8462 ]
 	#face_info[1][area]     : 120235.65625
 
+	if n_faces == 0:
+		# we literally found nothing in the image
+		return None, None
+
+	faces  = []
 	bboxes = []
 	for i, face in enumerate(face_info):
 		bboxes.append(face_info[i]['bbox'])
+		face_info[i]["area"] = calculate_area(face["bbox"])
 		print(f'face_info[{i}][age]      : {face["age"]}')
 		print(f'face_info[{i}][gender]   : {"female" if face["gender"] == 0 else "male"}')
 		print(f'face_info[{i}][det_score]: {face["det_score"]}')
 		print(f'face_info[{i}][bbox]     : {face["bbox"]}')
-		print(f'face_info[{i}][area]     : {calculate_area(face["bbox"])}')
+		print(f'face_info[{i}][area]     : {face["area"]}')
+		if calculate_area(face["bbox"]) > 100000:
+			faces.append(face_info[i])
 
 	if debug or True:
 		# Example usage
@@ -289,16 +297,18 @@ def load_face(fn, debug=False):
 		#image_with_bboxes.show()  # or save with .save('output.jpg')
 		image_with_bboxes.save('/tmp/output.jpg')
 
-	if debug or True:
+	if debug:
 		print(f'face_info: {face_info}')
 		print(f'face_info[0][bbox]: {face_info[0]["bbox"]}')
 
-	return None, None
-
+	n_faces = len(faces)
 	if n_faces == 0:
+		# our face detector found something, but it was too small to be used
 		return None, None
-	face_info = sorted(face_info, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1] # only use the maximum face
-	if n_faces > 1:
+
+	#face_info = sorted(face_info, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1] # only use the maximum face
+	face_info = sorted(face_info, key=lambda x:x['area'])[-1]		# only use the larger face
+	if n_faces > 1 and False:
 		return None, None
 	face_emb = face_info['embedding']
 	face_kps = draw_kps(face_image, face_info['kps'])
